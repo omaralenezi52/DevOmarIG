@@ -109,20 +109,20 @@ static void OmarShowWelcomeIfNeeded(void) {
 @end
 
 // Recursively find the UIImageView with the largest displayed image inside a
-// view — the on-screen photo, ignoring tiny icons/avatars in buttons.
+// view — the on-screen photo, ignoring tiny icons/avatars in buttons. Uses a
+// plain recursive C function (a self-referencing block would retain-cycle).
+static void OmarWalkForImage(UIView *v, UIImageView **best, CGFloat *bestArea) {
+    if ([v isKindOfClass:UIImageView.class]) {
+        UIImageView *iv = (UIImageView *)v;
+        CGFloat area = iv.bounds.size.width * iv.bounds.size.height;
+        if (iv.image && area > *bestArea) { *best = iv; *bestArea = area; }
+    }
+    for (UIView *sub in v.subviews) OmarWalkForImage(sub, best, bestArea);
+}
 static UIImageView *OmarLargestImageView(UIView *root) {
-    __block UIImageView *best = nil;
-    __block CGFloat bestArea = 200 * 200; // ignore anything smaller than 200×200
-    void (^__block walk)(UIView *);
-    walk = ^(UIView *v) {
-        if ([v isKindOfClass:UIImageView.class]) {
-            UIImageView *iv = (UIImageView *)v;
-            CGFloat area = iv.bounds.size.width * iv.bounds.size.height;
-            if (iv.image && area > bestArea) { best = iv; bestArea = area; }
-        }
-        for (UIView *sub in v.subviews) walk(sub);
-    };
-    walk(root);
+    UIImageView *best = nil;
+    CGFloat bestArea = 200 * 200; // ignore anything smaller than 200×200
+    OmarWalkForImage(root, &best, &bestArea);
     return best;
 }
 
