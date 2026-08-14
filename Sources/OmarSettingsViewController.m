@@ -4,6 +4,7 @@
 //
 #import "OmarSettingsViewController.h"
 #import "OmarPrefs.h"
+#import "OmarDiagnostics.h"
 #import <CoreLocation/CoreLocation.h>
 #import <objc/runtime.h>
 
@@ -106,6 +107,17 @@ static OmarSection *Section(NSString *title, NSArray<OmarRow *> *rows) {
                  @"tg://resolve?domain=o52lo", @"https://t.me/o52lo"),
         ]),
     ];
+
+    // Append a live diagnostics section: one info row per recorded hook line, so
+    // ✅/❌ and the discovered class names are visible (and screenshot-able).
+    NSArray<NSString *> *lines = [OmarDiagnostics report];
+    NSMutableArray<OmarRow *> *diagRows = [NSMutableArray array];
+    for (NSString *line in lines) [diagRows addObject:Info(line, nil, nil)];
+    if (diagRows.count == 0)
+        [diagRows addObject:Info(@"لم تُثبَّت الخطافات بعد — افتح تبويباً ثم أعد الفتح", nil, nil)];
+    NSMutableArray<OmarSection *> *all = [_sections mutableCopy];
+    [all addObject:Section(@"التشخيص (صوّر هذا القسم وأرسله)", diagRows)];
+    _sections = all;
 }
 
 - (void)viewDidLoad {

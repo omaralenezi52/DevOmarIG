@@ -15,20 +15,42 @@
 #import <CoreLocation/CoreLocation.h>
 #import <LocalAuthentication/LocalAuthentication.h>
 #import <objc/runtime.h>
+#import <string.h>
 #import "OmarPrefs.h"
 #import "OmarSettingsViewController.h"
+#import "OmarDiagnostics.h"
+
+#pragma mark - Diagnostics
+
+@implementation OmarDiagnostics
++ (NSMutableArray<NSString *> *)report {
+    static NSMutableArray *r; static dispatch_once_t t;
+    dispatch_once(&t, ^{ r = [NSMutableArray array]; });
+    return r;
+}
++ (void)log:(NSString *)line { [[self report] addObject:line]; }
+@end
 
 #pragma mark - Swizzle helper
 
 // Replace cls's instance method `sel` with `repl`, saving the original IMP into
 // *store. No-op (safely) if the class or method isn't present in this IG build.
+// Records the outcome for the on-device diagnostics panel.
 static BOOL OmarSwizzle(const char *className, SEL sel, IMP repl, void *store) {
+    NSString *label = [NSString stringWithFormat:@"%s#%@", className, NSStringFromSelector(sel)];
     Class cls = objc_getClass(className);
-    if (!cls) { NSLog(@"[OmarTweak] class %s not found", className); return NO; }
+    if (!cls) {
+        [OmarDiagnostics log:[@"❌ كلاس مفقود: " stringByAppendingString:@(className)]];
+        return NO;
+    }
     Method m = class_getInstanceMethod(cls, sel);
-    if (!m) { NSLog(@"[OmarTweak] %s#%@ not found", className, NSStringFromSelector(sel)); return NO; }
+    if (!m) {
+        [OmarDiagnostics log:[@"⚠️ ميثود مفقود: " stringByAppendingString:label]];
+        return NO;
+    }
     *(IMP *)store = method_getImplementation(m);
     method_setImplementation(m, repl);
+    [OmarDiagnostics log:[@"✅ " stringByAppendingString:label]];
     return YES;
 }
 
@@ -250,6 +272,33 @@ static void omar_requestLocation(id self, SEL _cmd) {
 }
 @end
 
+#pragma mark - Class discovery (find the real names in THIS IG build)
+
+// Log every runtime class whose name contains one of the feature keywords, so
+// we learn the exact class names used by the installed Instagram version.
+static void OmarScanClasses(void) {
+    const char *needles[] = {
+        "WebViewController", "InAppBrowser", "TypingStatus", "ScreenshotSafety",
+        "SeenState", "ReelViewerViewController", "LiveViewerViewController",
+        "Unsend", "VoiceMessage", "ProfileImageOptions", NULL
+    };
+    unsigned int count = 0;
+    Class *all = objc_copyClassList(&count);
+    for (int k = 0; needles[k]; k++) {
+        int hits = 0;
+        [OmarDiagnostics log:[NSString stringWithFormat:@"— بحث: %s —", needles[k]]];
+        for (unsigned int i = 0; i < count && hits < 6; i++) {
+            const char *n = class_getName(all[i]);
+            if (n && strstr(n, needles[k])) {
+                [OmarDiagnostics log:[@"   • " stringByAppendingString:@(n)]];
+                hits++;
+            }
+        }
+        if (!hits) [OmarDiagnostics log:@"   (لا يوجد)"];
+    }
+    free(all);
+}
+
 #pragma mark - Install
 
 static void OmarInstallHooks(void) {
@@ -288,6 +337,10 @@ static void OmarInstallHooks(void) {
         Method m = class_getInstanceMethod(winCls, @selector(motionEnded:withEvent:));
         if (m) method_setImplementation(m, (IMP)omar_motionEnded);
     }
+    [OmarDiagnostics log:@"✅ الهز (shake) + زر الإعدادات"];
+
+    // Discover the real Instagram class names in this installed version.
+    OmarScanClasses();
 }
 
 __attribute__((constructor))
