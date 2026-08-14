@@ -14,6 +14,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install build tools
+        run: |
+          set -e
+          # ldid signs the dylib (its absence is the Error 127 during linking);
+          # dpkg provides dpkg-deb so `make package` can emit the .deb.
+          brew install ldid dpkg make
+          echo "LDID=$(command -v ldid)"
+
       - name: Install Theos
         run: |
           set -e
