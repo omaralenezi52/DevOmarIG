@@ -36,12 +36,31 @@ jobs:
 
       - name: Build (package)
         run: |
-          set -e
+          set -o pipefail
           make clean || true
-          make package FINALPACKAGE=1 MESSAGE=1
+          # Capture full output so we can surface compiler diagnostics as
+          # annotations (readable via the public API, unlike the raw log).
+          make package FINALPACKAGE=1 MESSAGE=1 2>&1 | tee build.log || true
+          echo "=== surfacing diagnostics ==="
+          grep -nE "error:|warning:|Error [0-9]" build.log | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
           echo "=== build products ==="
-          find .theos/obj -name '*.dylib' -print
+          find .theos/obj -name '*.dylib' -print || true
           find packages -type f -print || true
+          # Fail the step if no dylib was produced.
+          if ! find .theos/obj -name '*.dylib' | grep -q .; then
+            echo "::error::Build failed — no OmarTweak.dylib produced"
+            exit 1
+          fi
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: warn
 
       - name: Upload dylib
         uses: actions/upload-artifact@v4
