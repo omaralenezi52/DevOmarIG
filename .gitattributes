@@ -1,0 +1,5 @@
+# Force LF for everything so the macOS/Linux CI build never chokes on CRLF
+# (Makefiles and shell steps are especially sensitive to carriage returns).
+* text=auto eol=lf
+Makefile text eol=lf
+*.yml text eol=lf
