@@ -68,7 +68,8 @@ static void OmarShowWelcomeIfNeeded(void) {
             alertControllerWithTitle:@"Dev | OMAR"
                              message:@"نورت البلس ياوحش 🐺\n"
                                       "أي ميزة تبيها تعال تيليجرام.\n\n"
-                                      "ولا تنسى: اضغط على زر البيت ضغطة مطولة ويفتح لك الإعدادات."
+                                      "لفتح الإعدادات: ادخل إعدادات إنستقرام وبتلقى زر \"Dev | OMAR\" فوق،\n"
+                                      "أو هز الجوال في أي وقت."
                       preferredStyle:UIAlertControllerStyleAlert];
         [ac addAction:[UIAlertAction actionWithTitle:@"يا هلا" style:UIAlertActionStyleDefault handler:nil]];
         ac.view.semanticContentAttribute = UISemanticContentAttributeForceRightToLeft;
@@ -76,13 +77,12 @@ static void OmarShowWelcomeIfNeeded(void) {
     });
 }
 
-#pragma mark - Gesture target (replaces Logos %new)
+#pragma mark - Action target
 
-// A singleton object owns the long-press action, since swizzling can't add a
-// method to IGTabBarController the way Logos %new could.
+// A singleton owns the "open panel" action for bar buttons and gestures.
 @interface OmarGestureTarget : NSObject
 + (instancetype)shared;
-- (void)handleLongPress:(UILongPressGestureRecognizer *)gr;
+- (void)openSettings;
 @end
 @implementation OmarGestureTarget
 + (instancetype)shared {
@@ -90,36 +90,42 @@ static void OmarShowWelcomeIfNeeded(void) {
     dispatch_once(&t, ^{ s = [OmarGestureTarget new]; });
     return s;
 }
-// Fire only for a long-press in the bottom strip (the tab-bar / home-button
-// area). This is version-independent — no reliance on any Instagram class.
-- (void)handleLongPress:(UILongPressGestureRecognizer *)gr {
-    if (gr.state != UIGestureRecognizerStateBegan) return;
-    UIView *v = gr.view;
-    CGPoint p = [gr locationInView:v];
-    if (p.y < v.bounds.size.height * 0.88) return; // ignore taps above the bar
-    OmarPresentSettings();
-}
+- (void)openSettings { OmarPresentSettings(); }
 @end
 
-#pragma mark - Launcher (window-level, no Instagram class needed)
+#pragma mark - Launcher 1: "Dev | OMAR" button inside Instagram's settings
 
-// Attach the long-press to the key window once. Called on every foreground so a
-// freshly-created window still gets it; the gesture name guards duplicates. The
-// recognizer must NOT cancel the app's own touches, so other gestures keep
-// working normally.
-static void OmarAttachLauncher(void) {
-    UIWindow *win = OmarKeyWindow();
-    if (!win) return;
-    for (UIGestureRecognizer *g in win.gestureRecognizers)
-        if ([g.name isEqualToString:@"omarLongPress"]) return;
-    UILongPressGestureRecognizer *lp =
-        [[UILongPressGestureRecognizer alloc] initWithTarget:[OmarGestureTarget shared]
-                                                      action:@selector(handleLongPress:)];
-    lp.name = @"omarLongPress";
-    lp.minimumPressDuration = 1.0;
-    lp.cancelsTouchesInView = NO;   // don't swallow Instagram's own touches
-    lp.delaysTouchesEnded = NO;
-    [win addGestureRecognizer:lp];
+// Instagram's settings landing is server-driven (Bloks), so there is no stable
+// class to inject a row into. Instead we watch every navigation push and, when
+// the pushed screen looks like a settings/options page, append a "Dev | OMAR"
+// button to its navigation bar. Version-independent — matches by class name.
+static void (*orig_push)(id, SEL, UIViewController *, BOOL);
+static void omar_push(id self, SEL _cmd, UIViewController *vc, BOOL animated) {
+    orig_push(self, _cmd, vc, animated);
+    if (!vc) return;
+    NSString *name = NSStringFromClass(vc.class);
+    if (![name containsString:@"Settings"] && ![name containsString:@"Option"]) return;
+    // Delay so Instagram has already set its own bar buttons; we append to them.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        NSMutableArray *items = [vc.navigationItem.rightBarButtonItems mutableCopy] ?: [NSMutableArray array];
+        for (UIBarButtonItem *it in items)
+            if ([it.title isEqualToString:@"Dev | OMAR"]) return; // already added
+        UIBarButtonItem *item = [[UIBarButtonItem alloc] initWithTitle:@"Dev | OMAR"
+            style:UIBarButtonItemStylePlain target:[OmarGestureTarget shared]
+            action:@selector(openSettings)];
+        [items addObject:item];
+        vc.navigationItem.rightBarButtonItems = items;
+    });
+}
+
+#pragma mark - Launcher 2: shake to open (safety net)
+
+// A guaranteed fallback so the panel is always reachable while we refine the
+// settings-button match. Added directly to UIWindow (not UIResponder) so we
+// never disturb the global responder chain.
+static void omar_motionEnded(id self, SEL _cmd, NSInteger motion, UIEvent *event) {
+    if (motion == UIEventSubtypeMotionShake) OmarPresentSettings();
 }
 
 #pragma mark - Hook: disable typing indicator
@@ -269,6 +275,19 @@ static void OmarInstallHooks(void) {
                 (IMP)omar_startUpdating, &orig_startUpdating);
     OmarSwizzle("CLLocationManager", @selector(requestLocation),
                 (IMP)omar_requestLocation, &orig_requestLocation);
+
+    // Launcher 1: inject the "Dev | OMAR" button into settings screens.
+    OmarSwizzle("UINavigationController", @selector(pushViewController:animated:),
+                (IMP)omar_push, &orig_push);
+
+    // Launcher 2: shake-to-open. Add the method directly to UIWindow so we don't
+    // touch UIResponder globally. If UIWindow already defines it, swizzle instead.
+    Class winCls = objc_getClass("UIWindow");
+    if (winCls && !class_addMethod(winCls, @selector(motionEnded:withEvent:),
+                                   (IMP)omar_motionEnded, "v@:q@")) {
+        Method m = class_getInstanceMethod(winCls, @selector(motionEnded:withEvent:));
+        if (m) method_setImplementation(m, (IMP)omar_motionEnded);
+    }
 }
 
 __attribute__((constructor))
@@ -285,7 +304,6 @@ static void OmarInit(void) {
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
         object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
         OmarInstallHooks();
-        OmarAttachLauncher();
         OmarShowWelcomeIfNeeded();
     }];
     // App-lock lifecycle (Foundation notifications, no hooks required).
