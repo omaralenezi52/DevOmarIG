@@ -50,13 +50,13 @@ jobs:
           # annotations (readable via the public API, unlike the raw log).
           make package FINALPACKAGE=1 MESSAGE=1 2>&1 | tee build.log || true
           echo "=== surfacing diagnostics ==="
-          # Real compiler errors and non-signing make failures → error annotations.
-          grep -nE "error:|Error [0-9]" build.log | while IFS= read -r line; do
+          # NOTE: Actions runs bash with `set -e`, and grep exits 1 on no-match.
+          # A clean build has zero errors, so these greps MUST NOT fail the step
+          # — hence the `|| true` guard on each pipeline.
+          { grep -nE "error:|Error [0-9]" build.log || true; } | while IFS= read -r line; do
             echo "::error::${line}"
           done
-          # Everything ld/clang flagged as a warning → warning annotations (the
-          # -multiply_defined notice is benign and expected on modern linkers).
-          grep -n "warning:" build.log | while IFS= read -r line; do
+          { grep -n "warning:" build.log || true; } | while IFS= read -r line; do
             echo "::warning::${line}"
           done
           echo "=== build products ==="
