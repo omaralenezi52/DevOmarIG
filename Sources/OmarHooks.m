@@ -168,13 +168,49 @@ static void omar_ssLog(id self, SEL _cmd, id message, BOOL isRecording, id isNud
 
 #pragma mark - Hook: open links in Safari
 
+// Pull a URL out of an in-app-browser view controller by trying the property
+// names Instagram/Meta browsers commonly expose. Wrapped in @try since KVC on
+// an unknown key throws.
+static NSURL *OmarExtractURL(id vc) {
+    NSArray *keys = @[ @"url", @"URL", @"currentURL", @"initialURL",
+                       @"initialURLString", @"redirectURL", @"requestURL" ];
+    for (NSString *key in keys) {
+        @try {
+            id v = [vc valueForKey:key];
+            if ([v isKindOfClass:NSURL.class]) return v;
+            if ([v isKindOfClass:NSString.class]) return [NSURL URLWithString:v];
+        } @catch (__unused NSException *e) {}
+    }
+    return nil;
+}
+
+static BOOL OmarLooksLikeBrowser(NSString *name) {
+    return [name containsString:@"InAppBrowser"] || [name containsString:@"WebViewController"]
+        || [name containsString:@"Browser"];
+}
+
+// Primary route: intercept the presentation of any in-app browser and hand the
+// URL to Safari instead. Version-independent — matches by class-name shape.
+static void (*orig_present)(id, SEL, UIViewController *, BOOL, void (^)(void));
+static void omar_present(id self, SEL _cmd, UIViewController *vc, BOOL animated, void (^completion)(void)) {
+    if (OmarEnabled(OmarKeyLinksInSafari) && vc && OmarLooksLikeBrowser(NSStringFromClass(vc.class))) {
+        NSURL *u = OmarExtractURL(vc);
+        if ([u.scheme.lowercaseString hasPrefix:@"http"]) {
+            [UIApplication.sharedApplication openURL:u options:@{} completionHandler:nil];
+            if (completion) completion();
+            return; // skip the in-app browser entirely
+        }
+    }
+    orig_present(self, _cmd, vc, animated, completion);
+}
+
+// Secondary route (kept as a fallback for builds that use IGWebViewController).
 static void (*orig_loadURL)(id, SEL, id);
 static void omar_loadURL(id self, SEL _cmd, id url) {
     if (OmarEnabled(OmarKeyLinksInSafari)) {
         NSURL *u = [url isKindOfClass:NSURL.class] ? url
                  : [url isKindOfClass:NSString.class] ? [NSURL URLWithString:url] : nil;
-        NSString *scheme = u.scheme.lowercaseString;
-        if ([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"]) {
+        if ([u.scheme.lowercaseString hasPrefix:@"http"]) {
             [UIApplication.sharedApplication openURL:u options:@{} completionHandler:nil];
             [(UIViewController *)self dismissViewControllerAnimated:YES completion:nil];
             return;
@@ -278,9 +314,10 @@ static void omar_requestLocation(id self, SEL _cmd) {
 // we learn the exact class names used by the installed Instagram version.
 static void OmarScanClasses(void) {
     const char *needles[] = {
-        "WebViewController", "InAppBrowser", "TypingStatus", "ScreenshotSafety",
-        "SeenState", "ReelViewerViewController", "LiveViewerViewController",
-        "Unsend", "VoiceMessage", "ProfileImageOptions", NULL
+        // Round 2 keywords — hunt the still-missing feature targets.
+        "ReelViewer", "StoryViewer", "ReelViewController", "ItemSeen",
+        "DirectVisualMessage", "MediaViewController", "PhotoViewController",
+        "FeedItemPhoto", "ProfileImageOptions", "LiveViewer", "Reshare", NULL
     };
     unsigned int count = 0;
     Class *all = objc_copyClassList(&count);
@@ -324,6 +361,10 @@ static void OmarInstallHooks(void) {
                 (IMP)omar_startUpdating, &orig_startUpdating);
     OmarSwizzle("CLLocationManager", @selector(requestLocation),
                 (IMP)omar_requestLocation, &orig_requestLocation);
+
+    // Open links in Safari: intercept in-app browser presentation.
+    OmarSwizzle("UIViewController", @selector(presentViewController:animated:completion:),
+                (IMP)omar_present, &orig_present);
 
     // Launcher 1: inject the "Dev | OMAR" button into settings screens.
     OmarSwizzle("UINavigationController", @selector(pushViewController:animated:),
