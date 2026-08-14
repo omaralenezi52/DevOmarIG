@@ -26,6 +26,7 @@ extern NSString *const OmarKeyLocationSpoof;      // تغيير الموقع
 extern NSString *const OmarKeyCallRecord;         // تسجيل المكالمة عبر الانستا
 extern NSString *const OmarKeySaveProfilePic;     // حفظ صورة البروفايل
 extern NSString *const OmarKeyMediaSave;          // تنزيل الصورة بالضغط المطوّل
+extern NSString *const OmarKeyStealthRead;        // رؤية الرسائل الخاصة بدون علم (تجريبي)
 
 // Location spoof coordinates (only meaningful when OmarKeyLocationSpoof is on).
 extern NSString *const OmarKeyLocationLat;

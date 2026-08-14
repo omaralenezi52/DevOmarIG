@@ -54,6 +54,22 @@ static BOOL OmarSwizzle(const char *className, SEL sel, IMP repl, void *store) {
     return YES;
 }
 
+// Like OmarSwizzle but for a CLASS method (lives on the metaclass).
+static BOOL OmarSwizzleClassMethod(const char *className, SEL sel, IMP repl, void *store) {
+    Class cls = objc_getClass(className);
+    if (!cls) { [OmarDiagnostics log:[@"❌ كلاس مفقود: " stringByAppendingString:@(className)]]; return NO; }
+    Class meta = object_getClass(cls);
+    Method m = class_getInstanceMethod(meta, sel);
+    if (!m) {
+        [OmarDiagnostics log:[NSString stringWithFormat:@"⚠️ ميثود صنف مفقود: %s+%@", className, NSStringFromSelector(sel)]];
+        return NO;
+    }
+    *(IMP *)store = method_getImplementation(m);
+    method_setImplementation(m, repl);
+    [OmarDiagnostics log:[NSString stringWithFormat:@"✅ %s+%@", className, NSStringFromSelector(sel)]];
+    return YES;
+}
+
 static BOOL OmarEnabled(NSString *key) { return [[OmarPrefs shared] enabled:key]; }
 
 #pragma mark - Shared UI helpers
@@ -263,6 +279,17 @@ static void omar_loadURL(id self, SEL _cmd, id url) {
     orig_loadURL(self, _cmd, url);
 }
 
+#pragma mark - Hook: read DMs without a read receipt (تجريبي)
+
+// The "seen" receipt for a direct message is built by this factory before being
+// sent. When stealth-read is on we return nil so no seen mutation is created —
+// you read the message without the sender seeing "Seen". Experimental & opt-in.
+static id (*orig_seenBuilder)(id, SEL, id, id);
+static id omar_seenBuilder(id self, SEL _cmd, id data, id metadata) {
+    if (OmarEnabled(OmarKeyStealthRead)) return nil;
+    return orig_seenBuilder(self, _cmd, data, metadata);
+}
+
 #pragma mark - Hook: location spoofing
 
 static CLLocation *OmarSpoofedLocation(void) {
@@ -405,6 +432,11 @@ static void OmarInstallHooks(void) {
                 (IMP)omar_startUpdating, &orig_startUpdating);
     OmarSwizzle("CLLocationManager", @selector(requestLocation),
                 (IMP)omar_requestLocation, &orig_requestLocation);
+
+    // Read DMs without a read receipt (experimental).
+    OmarSwizzleClassMethod("IGDirectItemSeenMutationBuilder",
+                           @selector(builderWithData:metadata:),
+                           (IMP)omar_seenBuilder, &orig_seenBuilder);
 
     // Open links in Safari: intercept in-app browser presentation.
     OmarSwizzle("UIViewController", @selector(presentViewController:animated:completion:),

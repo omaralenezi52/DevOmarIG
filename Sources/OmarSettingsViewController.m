@@ -80,6 +80,7 @@ static OmarSection *Section(NSString *title, NSArray<OmarRow *> *rows) {
         Section(@"الرسائل والخاص", @[
             Toggle(@"إبقاء رسائل الخاص المحذوفة",         OmarKeyKeepUnsent),
             Toggle(@"تعطيل مؤشر الكتابة",                OmarKeyNoTyping),
+            Toggle(@"رؤية الرسائل بدون علم (تجريبي)",     OmarKeyStealthRead),
             Toggle(@"تعطيل إشعارات لقطة الشاشة",          OmarKeyNoScreenshotNotify),
             Toggle(@"تعطيل حماية لقطة الشاشة",           OmarKeyNoScreenshotGuard),
             Toggle(@"تعطيل الوسائط المعاد تشغيلها",       OmarKeyNoMediaReplayFlag),
