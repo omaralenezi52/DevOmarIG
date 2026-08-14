@@ -145,4 +145,34 @@ static CLLocation *OmarSpoofedLocation(void) {
         object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
         if ([[OmarPrefs shared] enabled:OmarKeyAppLock]) [[OmarAppLock shared] authenticate];
     }];
+
+    // === DIAGNOSTIC BEACON (temporary) ===
+    // Runs from the constructor — a plain C initializer that needs NO substrate.
+    // If this alert appears, the dylib IS injected and loading; any non-working
+    // feature is then a hooking/substrate issue, not an injection one.
+    static BOOL shown = NO;
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
+        object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
+        if (shown) return;
+        shown = YES;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            UIWindow *w = nil;
+            for (UIScene *s in UIApplication.sharedApplication.connectedScenes) {
+                if ([s isKindOfClass:UIWindowScene.class]) {
+                    for (UIWindow *win in ((UIWindowScene *)s).windows)
+                        if (win.isKeyWindow) { w = win; break; }
+                }
+                if (w) break;
+            }
+            UIViewController *top = w.rootViewController;
+            while (top.presentedViewController) top = top.presentedViewController;
+            UIAlertController *ac = [UIAlertController
+                alertControllerWithTitle:@"Dev | OMAR"
+                                 message:@"✅ الدايلب محقون ويعمل.\n(رسالة تشخيص — بنشيلها بعدين)"
+                          preferredStyle:UIAlertControllerStyleAlert];
+            [ac addAction:[UIAlertAction actionWithTitle:@"تمام" style:UIAlertActionStyleDefault handler:nil]];
+            [top presentViewController:ac animated:YES completion:nil];
+        });
+    }];
 }
