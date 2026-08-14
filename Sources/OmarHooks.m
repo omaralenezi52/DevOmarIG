@@ -105,7 +105,37 @@ static void OmarShowWelcomeIfNeeded(void) {
 @interface OmarGestureTarget : NSObject
 + (instancetype)shared;
 - (void)openSettings;
+- (void)handleSaveLongPress:(UILongPressGestureRecognizer *)gr;
 @end
+
+// Recursively find the UIImageView with the largest displayed image inside a
+// view — the on-screen photo, ignoring tiny icons/avatars in buttons.
+static UIImageView *OmarLargestImageView(UIView *root) {
+    __block UIImageView *best = nil;
+    __block CGFloat bestArea = 200 * 200; // ignore anything smaller than 200×200
+    void (^__block walk)(UIView *);
+    walk = ^(UIView *v) {
+        if ([v isKindOfClass:UIImageView.class]) {
+            UIImageView *iv = (UIImageView *)v;
+            CGFloat area = iv.bounds.size.width * iv.bounds.size.height;
+            if (iv.image && area > bestArea) { best = iv; bestArea = area; }
+        }
+        for (UIView *sub in v.subviews) walk(sub);
+    };
+    walk(root);
+    return best;
+}
+
+static void OmarToast(NSString *msg) {
+    UIViewController *top = OmarTopViewController();
+    UIAlertController *ac = [UIAlertController alertControllerWithTitle:nil message:msg
+                                                        preferredStyle:UIAlertControllerStyleAlert];
+    [top presentViewController:ac animated:YES completion:^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.1 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ [ac dismissViewControllerAnimated:YES completion:nil]; });
+    }];
+}
+
 @implementation OmarGestureTarget
 + (instancetype)shared {
     static OmarGestureTarget *s; static dispatch_once_t t;
@@ -113,6 +143,20 @@ static void OmarShowWelcomeIfNeeded(void) {
     return s;
 }
 - (void)openSettings { OmarPresentSettings(); }
+
+- (void)handleSaveLongPress:(UILongPressGestureRecognizer *)gr {
+    if (gr.state != UIGestureRecognizerStateBegan) return;
+    if (!OmarEnabled(OmarKeyMediaSave)) return;
+    UIView *win = gr.view;
+    UIView *hit = [win hitTest:[gr locationInView:win] withEvent:nil];
+    // Search from the touched view up to a reasonable container for the photo.
+    UIView *scope = hit;
+    for (int i = 0; i < 4 && scope.superview; i++) scope = scope.superview;
+    UIImageView *iv = OmarLargestImageView(scope) ?: OmarLargestImageView(win);
+    if (!iv.image) { OmarToast(@"ما لقيت صورة هنا"); return; }
+    UIImageWriteToSavedPhotosAlbum(iv.image, nil, NULL, NULL);
+    OmarToast(@"تم حفظ الصورة ✅");
+}
 @end
 
 #pragma mark - Launcher 1: "Dev | OMAR" button inside Instagram's settings
@@ -399,6 +443,20 @@ static void OmarInit(void) {
         object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
         OmarInstallHooks();
         OmarShowWelcomeIfNeeded();
+        // Attach the long-press-to-save gesture to the current key window (once).
+        UIWindow *win = OmarKeyWindow();
+        BOOL exists = NO;
+        for (UIGestureRecognizer *g in win.gestureRecognizers)
+            if ([g.name isEqualToString:@"omarSave"]) { exists = YES; break; }
+        if (win && !exists) {
+            UILongPressGestureRecognizer *lp = [[UILongPressGestureRecognizer alloc]
+                initWithTarget:[OmarGestureTarget shared] action:@selector(handleSaveLongPress:)];
+            lp.name = @"omarSave";
+            lp.minimumPressDuration = 0.6;
+            lp.cancelsTouchesInView = NO;
+            lp.delaysTouchesEnded = NO;
+            [win addGestureRecognizer:lp];
+        }
     }];
     // App-lock lifecycle (Foundation notifications, no hooks required).
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillResignActiveNotification

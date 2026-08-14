@@ -20,6 +20,7 @@ NSString *const OmarKeyAppLock            = @"omar_app_lock";
 NSString *const OmarKeyLocationSpoof      = @"omar_location_spoof";
 NSString *const OmarKeyCallRecord         = @"omar_call_record";
 NSString *const OmarKeySaveProfilePic     = @"omar_save_pfp";
+NSString *const OmarKeyMediaSave          = @"omar_media_save";
 
 NSString *const OmarKeyLocationLat        = @"omar_location_lat";
 NSString *const OmarKeyLocationLng        = @"omar_location_lng";

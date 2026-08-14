@@ -89,6 +89,7 @@ static OmarSection *Section(NSString *title, NSArray<OmarRow *> *rows) {
         Section(@"الوسائط والمرفقات", @[
             Toggle(@"تمكين إضافة فيديو من معرض الملصقات",  OmarKeyStickerVideo),
             Toggle(@"حفظ صورة البروفايل",               OmarKeySaveProfilePic),
+            Toggle(@"تنزيل الصورة بالضغط المطوّل",        OmarKeyMediaSave),
             Toggle(@"تسجيل المكالمة عبر الانستا",         OmarKeyCallRecord),
         ]),
         Section(@"عام", @[
