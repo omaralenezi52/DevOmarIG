@@ -5,6 +5,7 @@
 #import "OmarSettingsViewController.h"
 #import "OmarPrefs.h"
 #import "OmarDiagnostics.h"
+#import "OmarRecorder.h"
 #import <CoreLocation/CoreLocation.h>
 #import <objc/runtime.h>
 
@@ -91,7 +92,7 @@ static OmarSection *Section(NSString *title, NSArray<OmarRow *> *rows) {
             Toggle(@"تمكين إضافة فيديو من معرض الملصقات",  OmarKeyStickerVideo),
             Toggle(@"حفظ صورة البروفايل",               OmarKeySaveProfilePic),
             Toggle(@"تنزيل الصورة بالضغط المطوّل",        OmarKeyMediaSave),
-            Toggle(@"تسجيل المكالمة عبر الانستا",         OmarKeyCallRecord),
+            Action(@"🔴 تسجيل المكالمة/الشاشة (بدء/إيقاف)",  @"toggle_record"),
         ]),
         Section(@"عام", @[
             Toggle(@"فتح الروابط في سفاري",              OmarKeyLinksInSafari),
@@ -193,6 +194,11 @@ static OmarSection *Section(NSString *title, NSArray<OmarRow *> *rows) {
     OmarRow *row = _sections[ip.section].rows[ip.row];
     if (row.kind == OmarRowAction && [row.actionId isEqualToString:@"pick_location"]) {
         [self promptForCoordinates];
+    } else if (row.kind == OmarRowAction && [row.actionId isEqualToString:@"toggle_record"]) {
+        // Dismiss the panel first so ReplayKit captures the call, not our sheet.
+        [self dismissViewControllerAnimated:YES completion:^{
+            [[OmarRecorder shared] toggle];
+        }];
     } else if (row.kind == OmarRowLink) {
         [self openURLApp:row.urlApp web:row.urlWeb];
     }

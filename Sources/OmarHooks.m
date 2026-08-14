@@ -16,9 +16,11 @@
 #import <LocalAuthentication/LocalAuthentication.h>
 #import <objc/runtime.h>
 #import <string.h>
+#import <ReplayKit/ReplayKit.h>
 #import "OmarPrefs.h"
 #import "OmarSettingsViewController.h"
 #import "OmarDiagnostics.h"
+#import "OmarRecorder.h"
 
 #pragma mark - Diagnostics
 
@@ -406,6 +408,45 @@ static void OmarScanClasses(void) {
     }
     free(all);
 }
+
+#pragma mark - Screen / call recorder (ReplayKit)
+
+@interface OmarRecorder () <RPPreviewViewControllerDelegate>
+@end
+
+@implementation OmarRecorder
++ (instancetype)shared {
+    static OmarRecorder *s; static dispatch_once_t t;
+    dispatch_once(&t, ^{ s = [OmarRecorder new]; });
+    return s;
+}
+- (BOOL)isRecording { return RPScreenRecorder.sharedRecorder.isRecording; }
+
+- (void)toggle {
+    RPScreenRecorder *rec = RPScreenRecorder.sharedRecorder;
+    if (rec.isRecording) {
+        [rec stopRecordingWithHandler:^(RPPreviewViewController *preview, NSError *error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (error || !preview) { OmarToast(@"تعذّر إيقاف التسجيل"); return; }
+                preview.previewControllerDelegate = self;
+                preview.modalPresentationStyle = UIModalPresentationFullScreen;
+                [OmarTopViewController() presentViewController:preview animated:YES completion:nil];
+            });
+        }];
+    } else {
+        rec.microphoneEnabled = YES; // capture your own voice too
+        [rec startRecordingWithHandler:^(NSError *error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                OmarToast(error ? @"تعذّر بدء التسجيل" : @"بدأ التسجيل 🔴");
+            });
+        }];
+    }
+}
+
+- (void)previewControllerDidFinish:(RPPreviewViewController *)previewController {
+    [previewController dismissViewControllerAnimated:YES completion:nil];
+}
+@end
 
 #pragma mark - Install
 

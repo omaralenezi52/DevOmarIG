@@ -15,7 +15,7 @@ OmarTweak_FILES = \
 	Sources/OmarSettingsViewController.m
 
 OmarTweak_CFLAGS = -fobjc-arc -ISources -Wno-deprecated-declarations
-OmarTweak_FRAMEWORKS = UIKit Foundation CoreLocation LocalAuthentication
+OmarTweak_FRAMEWORKS = UIKit Foundation CoreLocation LocalAuthentication ReplayKit
 # @rpath so the injector (Sideloadly) can place the dylib and add its own rpath.
 OmarTweak_LDFLAGS = -install_name @rpath/OmarTweak.dylib
 
