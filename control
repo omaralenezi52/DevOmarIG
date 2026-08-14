@@ -1,0 +1,9 @@
+Package: com.omar.igtweak
+Name: Dev | OMAR
+Version: 0.1.0
+Architecture: iphoneos-arm64
+Description: Private settings panel and feature toggles for Instagram (long-press Home).
+Maintainer: Dev | OMAR
+Author: Dev | OMAR
+Section: Tweaks
+Depends: mobilesubstrate

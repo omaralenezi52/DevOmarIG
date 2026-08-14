@@ -1,0 +1,60 @@
+name: Build OmarTweak dylib
+
+# Builds the Instagram tweak into a dylib (and .deb) on every push and on
+# manual dispatch. The compiled dylib is uploaded as a downloadable artifact.
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Theos
+        run: |
+          set -e
+          export THEOS=$HOME/theos
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+          git clone --recursive https://github.com/theos/theos.git "$THEOS"
+          # Toolchain: use Xcode's clang (already on the runner).
+          echo "Theos installed at $THEOS"
+
+      - name: Fetch iOS SDK
+        run: |
+          set -e
+          # A recent iPhoneOS SDK is required for UIKit/CoreLocation headers.
+          git clone --depth 1 https://github.com/theos/sdks.git "$HOME/sdks_repo"
+          mkdir -p "$THEOS/sdks"
+          # Copy the newest iPhoneOS SDK available in the repo.
+          SDK=$(ls -d "$HOME/sdks_repo"/iPhoneOS*.sdk | sort -V | tail -n1)
+          cp -R "$SDK" "$THEOS/sdks/"
+          echo "Using SDK: $SDK"
+
+      - name: Build (package)
+        run: |
+          set -e
+          make clean || true
+          make package FINALPACKAGE=1 MESSAGE=1
+          echo "=== build products ==="
+          find .theos/obj -name '*.dylib' -print
+          find packages -type f -print || true
+
+      - name: Upload dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: OmarTweak-dylib
+          path: |
+            .theos/obj/**/OmarTweak.dylib
+            .theos/obj/OmarTweak.dylib
+          if-no-files-found: warn
+
+      - name: Upload deb package
+        uses: actions/upload-artifact@v4
+        with:
+          name: OmarTweak-deb
+          path: packages/*.deb
+          if-no-files-found: warn
