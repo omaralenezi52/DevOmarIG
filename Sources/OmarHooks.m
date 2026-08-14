@@ -90,27 +90,36 @@ static void OmarShowWelcomeIfNeeded(void) {
     dispatch_once(&t, ^{ s = [OmarGestureTarget new]; });
     return s;
 }
+// Fire only for a long-press in the bottom strip (the tab-bar / home-button
+// area). This is version-independent — no reliance on any Instagram class.
 - (void)handleLongPress:(UILongPressGestureRecognizer *)gr {
-    if (gr.state == UIGestureRecognizerStateBegan) OmarPresentSettings();
+    if (gr.state != UIGestureRecognizerStateBegan) return;
+    UIView *v = gr.view;
+    CGPoint p = [gr locationInView:v];
+    if (p.y < v.bounds.size.height * 0.88) return; // ignore taps above the bar
+    OmarPresentSettings();
 }
 @end
 
-#pragma mark - Hook: launcher (long-press Home tab)
+#pragma mark - Launcher (window-level, no Instagram class needed)
 
-static void (*orig_timelineButton)(id, SEL);
-static void omar_timelineButton(id self, SEL _cmd) {
-    orig_timelineButton(self, _cmd);
-    UIView *home = [self valueForKey:@"_timelineButton"];
-    if (![home isKindOfClass:UIView.class]) return;
-    for (UIGestureRecognizer *g in home.gestureRecognizers)
-        if ([g.name isEqualToString:@"omarLongPress"]) return; // attach once
+// Attach the long-press to the key window once. Called on every foreground so a
+// freshly-created window still gets it; the gesture name guards duplicates. The
+// recognizer must NOT cancel the app's own touches, so other gestures keep
+// working normally.
+static void OmarAttachLauncher(void) {
+    UIWindow *win = OmarKeyWindow();
+    if (!win) return;
+    for (UIGestureRecognizer *g in win.gestureRecognizers)
+        if ([g.name isEqualToString:@"omarLongPress"]) return;
     UILongPressGestureRecognizer *lp =
         [[UILongPressGestureRecognizer alloc] initWithTarget:[OmarGestureTarget shared]
                                                       action:@selector(handleLongPress:)];
     lp.name = @"omarLongPress";
     lp.minimumPressDuration = 1.0;
-    [home addGestureRecognizer:lp];
-    OmarShowWelcomeIfNeeded();
+    lp.cancelsTouchesInView = NO;   // don't swallow Instagram's own touches
+    lp.delaysTouchesEnded = NO;
+    [win addGestureRecognizer:lp];
 }
 
 #pragma mark - Hook: disable typing indicator
@@ -242,10 +251,6 @@ static void OmarInstallHooks(void) {
     if (installed) return;
     installed = YES;
 
-    OmarSwizzle("IGTabBarController",
-                @selector(_createAndConfigureTimelineButtonIfNeeded),
-                (IMP)omar_timelineButton, &orig_timelineButton);
-
     OmarSwizzle("IGDirectTypingStatusService",
                 @selector(updateOutgoingStatusIsActive:threadKey:threadMetadata:typingStatusType:),
                 (IMP)omar_typing, &orig_typing);
@@ -266,19 +271,6 @@ static void OmarInstallHooks(void) {
                 (IMP)omar_requestLocation, &orig_requestLocation);
 }
 
-// Diagnostic beacon (temporary): proves the dylib loaded, independent of hooks.
-static void OmarShowLoadedBeacon(void) {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        UIAlertController *ac = [UIAlertController
-            alertControllerWithTitle:@"Dev | OMAR"
-                             message:@"✅ الدايلب محقون ويعمل (بدون جيلبريك).\n(رسالة تشخيص مؤقتة)"
-                      preferredStyle:UIAlertControllerStyleAlert];
-        [ac addAction:[UIAlertAction actionWithTitle:@"تمام" style:UIAlertActionStyleDefault handler:nil]];
-        [OmarTopViewController() presentViewController:ac animated:YES completion:nil];
-    });
-}
-
 __attribute__((constructor))
 static void OmarInit(void) {
     // Constructor runs at dylib load — before the app's UI exists. Defer the
@@ -286,6 +278,15 @@ static void OmarInit(void) {
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
         object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
         OmarInstallHooks();
+    }];
+    // On every foreground: (re)attach the launcher to the current key window and
+    // install the feature swizzles. didBecomeActive fires after the UI exists,
+    // so the window and all Instagram classes are guaranteed present.
+    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
+        object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
+        OmarInstallHooks();
+        OmarAttachLauncher();
+        OmarShowWelcomeIfNeeded();
     }];
     // App-lock lifecycle (Foundation notifications, no hooks required).
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillResignActiveNotification
@@ -295,13 +296,5 @@ static void OmarInit(void) {
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
         object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
         if (OmarEnabled(OmarKeyAppLock)) [[OmarAppLock shared] authenticate];
-    }];
-    // One-time load confirmation.
-    static BOOL beaconShown = NO;
-    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
-        object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
-        if (beaconShown) return;
-        beaconShown = YES;
-        OmarShowLoadedBeacon();
     }];
 }
