@@ -66,7 +66,9 @@ static void OmarShowWelcomeIfNeeded(void) {
 - (void)_createAndConfigureTimelineButtonIfNeeded {
     %orig;
     // The timeline (home) button is the "home button" the user long-presses.
-    UIView *homeButton = [self valueForKey:@"_timelineButton"];
+    // Cast to id: Logos only forward-declares IGTabBarController, so a typed
+    // instance message would fail — id defers the lookup to runtime (KVC).
+    UIView *homeButton = [(id)self valueForKey:@"_timelineButton"];
     if (![homeButton isKindOfClass:UIView.class]) return;
 
     // Attach exactly once — this method can run again on tab-bar reconfigure.
